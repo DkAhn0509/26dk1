@@ -224,6 +224,12 @@ img{max-width:100%}
 #hudEnergy b{letter-spacing:2px;color:var(--g)}
 .tally .sub{color:var(--ink);border-top:1px solid var(--line);padding-top:4px;margin-top:2px}
 @media (max-width:820px){.loginbox{grid-template-columns:1fr;gap:18px}#login{align-items:flex-start}.brand h1{font-size:34px}}
+
+.tahead{margin:14px 0 4px;font-family:var(--display);font-weight:400;font-size:16px;color:var(--photon)}
+.tagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px 16px}
+.rk.ta{grid-template-columns:38px minmax(0,1fr) auto}
+.tabs{overflow-x:auto}
+.tabs button{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -306,6 +312,7 @@ img{max-width:100%}
     <div class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="stages" aria-selected="true">스테이지</button>
       <button type="button" role="tab" data-tab="rank" aria-selected="false">랭킹</button>
+      <button type="button" role="tab" data-tab="grade" aria-selected="false">등급</button>
       <button type="button" role="tab" data-tab="badges" aria-selected="false">뱃지</button>
       <button type="button" role="tab" data-tab="codex" aria-selected="false">개념 도감</button>
     </div>
@@ -344,6 +351,7 @@ img{max-width:100%}
 </div>
 
 <script>
+/* 빛과 별 탐사대 v2 */
 (()=>{'use strict';
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -382,30 +390,39 @@ const API_URL=String(window.API_URL||'').trim(),DEMO=!/^https:\/\//.test(API_URL
 let prefs={mute:false};try{prefs=Object.assign(prefs,JSON.parse(localStorage.getItem('lsc-prefs'))||{})}catch(e){}
 const savePrefs=()=>{try{localStorage.setItem('lsc-prefs',JSON.stringify(prefs))}catch(e){}};
 let me=null,rankData=null;
-const H_BONUS=[150,105,75,45],HID_TIME=90;
+const H_BONUS=[150,105,75,45],HID_MOVE=20,HID_SOLVE=30;
 const hBonus=n=>H_BONUS[clamp(n,1,4)-1];
 const coefOf=a=>a<=1?1:a===2?.9:.8;
-function calc(mission,photons,hits,time,attempts){const acc=clamp(Math.round(mission+photons*10-hits*10),0,400),tb=time<=150?100:time>=300?0:Math.round(100*(300-time)/150),coef=coefOf(attempts);return{acc,tb,coef,score:Math.round((acc+tb)*coef)}}
-const starOf=s=>s>=400?3:s>=280?2:1;
-const blankRec=()=>({a:0,s:0,acc:0,tb:0,t:0,star:0,ph:0,ht:0,hb:0,clr:false});
+const sdef=id=>STAGES.find(d=>d.id===id);
+/* 한 판의 점수 = (정확도 + 시간 보너스 + 숨겨진 공간 보너스) × (히든 스테이지 1.5) × 도전 계수 */
+function calc(id,mission,photons,hits,falls,time,attempts,bonus){
+ const d=sdef(id),mult=d.hidden?1.5:1,T0=d.hidden?180:120,acc=clamp(Math.round(mission+photons*10-hits*10-falls*10),0,400),
+  tb=time<=15?200:time>=T0?0:Math.round(200*(T0-time)/(T0-15)),coef=coefOf(attempts),score=Math.round((acc+tb+bonus)*mult*coef);
+ return{acc,tb,coef,mult,score,star:score>=500*mult?3:score>=350*mult?2:1}}
+const blankRec=()=>({a:0,s:0,acc:0,tb:0,hb:0,t:0,star:0,ph:0,fs:0,ta:0,clr:false});
 const rec=id=>(me&&me.st[id])||blankRec();
 const myRec=id=>me.st[id]=Object.assign(blankRec(),me.st[id]);
 const cleared=id=>!!rec(id).clr;
-const total=()=>STAGES.reduce((a,d)=>a+(rec(d.id).s||0)+(rec(d.id).hb||0),0);
+const total=()=>STAGES.reduce((a,d)=>a+(rec(d.id).s||0),0);
 const totStars=()=>STAGES.reduce((a,d)=>a+(cleared(d.id)?rec(d.id).star||0:0),0);
 const totPh=()=>STAGES.reduce((a,d)=>a+(rec(d.id).ph||0),0);
 const totHid=()=>STAGES.filter(d=>rec(d.id).hb>0).length;
 const clsLabel=id=>id[0]+'학년 '+(+id.slice(1,3))+'반';
 const fmtT=t=>{t=Math.max(0,Math.floor(t));return Math.floor(t/60)+':'+String(t%60).padStart(2,'0')};
-const RANKS=[[0,'훈련생'],[800,'관측 대원'],[2000,'광학 기사'],[3400,'항해사'],[5000,'선임 연구원'],[6500,'은하 탐험가']];
+const RANKS=[[0,'훈련생'],[1000,'관측 대원'],[2500,'광학 기사'],[4200,'항해사'],[6000,'선임 연구원'],[8000,'은하 탐험가']];
 function rank(x){let i=0;RANKS.forEach((r,k)=>{if(x>=r[0])i=k});return i}
+const TITLES=[
+ {id:'xperfect',name:'완전무결 탐사대장',desc:'히든 스테이지를 포함한 15개 스테이지를 모두 첫 도전에 ★3'},
+ {id:'xtime',name:'시간의 지배자',desc:'15개 스테이지 모두 클리어 + 타임어택 1위 3개'}];
+const myTitles=()=>TITLES.filter(t=>me&&me.badges.includes(t.id));
 const worldDone=w=>STAGES.filter(d=>d.world===w).every(d=>cleared(d.id));
 const BADGES=[
  {id:'first',name:'첫 탐사',desc:'스테이지 1개 클리어',ok:()=>STAGES.some(d=>cleared(d.id))},
  {id:'sniper',name:'한 번에 명중',desc:'한 스테이지의 미션 3개를 모두 한 번에 성공',ok:c=>!!c&&c.mission>=300},
  {id:'nohit',name:'무결점 이동',desc:'충돌도 추락도 없이 클리어',ok:c=>!!c&&c.hits===0&&c.falls===0},
  {id:'sweep',name:'싹쓸이',desc:'한 스테이지의 광자 10개를 모두 수집',ok:c=>!!c&&c.got>=10},
- {id:'speed',name:'광속 돌파',desc:'2분 30초 안에 클리어',ok:c=>!!c&&c.time<=150},
+ {id:'speed',name:'광속 돌파',desc:'1분 안에 클리어',ok:c=>!!c&&c.time<=60},
+ {id:'attack',name:'타임어택 등록',desc:'타임어택 자격을 갖춘 기록 달성',ok:c=>!!c&&c.ta},
  {id:'collector',name:'광자 수집가',desc:'광자 누적 60개',ok:()=>totPh()>=60},
  {id:'secret',name:'비밀 요원',desc:'숨겨진 공간 1곳 성공',ok:()=>totHid()>=1},
  {id:'secret6',name:'비밀의 지배자',desc:'숨겨진 공간 6곳 성공',ok:()=>totHid()>=6},
@@ -413,29 +430,36 @@ const BADGES=[
  {id:'lens',name:'렌즈 장인',desc:'거울과 렌즈의 상 ★3',ok:()=>rec('lens').star>=3},
  {id:'light',name:'빛의 지배자',desc:'1구역 스테이지 5개 클리어',ok:()=>worldDone(0)},
  {id:'cosmos',name:'우주 개척자',desc:'2구역 스테이지 7개 클리어',ok:()=>worldDone(1)},
+ {id:'pioneer',name:'미지의 개척자',desc:'히든 스테이지 1개 클리어',ok:()=>STAGES.some(d=>d.hidden&&cleared(d.id))},
  {id:'three5',name:'반짝반짝',desc:'★3 스테이지 5개',ok:()=>STAGES.filter(d=>rec(d.id).star>=3).length>=5},
- {id:'master',name:'은하 정복',desc:'스테이지 12개 모두 ★3',ok:()=>STAGES.every(d=>rec(d.id).star>=3)}
+ {id:'master',name:'은하 정복',desc:'기본 스테이지 12개 모두 ★3',ok:()=>STAGES.filter(d=>!d.hidden).every(d=>rec(d.id).star>=3)}
 ];
 
 /* 체험 모드(서버 없이 이 기기에만 저장) */
+function demoTops(db){return STAGES.map(sd=>{let best=null;Object.keys(db).forEach(k=>{const r=db[k].st[sd.id];if(r&&r.ta>0&&(!best||r.ta<best.t))best={s:sd.id,id:k,t:r.ta}});return best}).filter(Boolean)}
 function demoApi(a,d){
- let db={};try{db=JSON.parse(localStorage.getItem('lsc-demo'))||{}}catch(e){}
+ let db={};try{db=JSON.parse(localStorage.getItem('lsc-demo2'))||{}}catch(e){}
  const id=d.id||String(d.token||'').split('.')[0],u=id?(db[id]=db[id]||{pw:null,st:{},badges:[]}):null;let out={ok:true};
  const R=s=>u.st[s]=Object.assign(blankRec(),u.st[s]);
- if(a==='login'){if(!/^\d{5}$/.test(d.id)||d.pw!==(u.pw||d.id+'!!'))return{ok:false,err:'학번 또는 비밀번호가 올바르지 않습니다.'};out=Object.assign(out,{id,token:id+'.demo',mustChange:!u.pw,st:u.st,badges:u.badges,openAll:false})}
- else if(a==='state'){if(!u)return{ok:false,err:'AUTH: 다시 로그인하세요.'};out=Object.assign(out,{id,mustChange:!u.pw,st:u.st,badges:u.badges,openAll:false})}
+ if(a==='login'){if(!/^\d{5}$/.test(d.id)||d.pw!==(u.pw||d.id+'!!'))return{ok:false,err:'학번 또는 비밀번호가 올바르지 않습니다.'};out=Object.assign(out,{id,token:id+'.demo',mustChange:!u.pw,st:u.st,badges:u.badges,openAll:false,openHidden:false})}
+ else if(a==='state'){if(!u)return{ok:false,err:'AUTH: 다시 로그인하세요.'};out=Object.assign(out,{id,mustChange:!u.pw,st:u.st,badges:u.badges,openAll:false,openHidden:false})}
  else if(a==='changePw'){if(d.newPw.length<8)return{ok:false,err:'비밀번호는 8자리 이상이어야 합니다.'};if(d.newPw===id+'!!')return{ok:false,err:'초기 비밀번호와 다른 비밀번호를 정하세요.'};u.pw=d.newPw;out.token=id+'.demo'}
  else if(a==='attempt'){const r=R(d.stage);r.a++;out.stage=d.stage;out.rec=r}
- else if(a==='finish'){const r=R(d.stage);if(!r.a)r.a=1;const c=calc(d.mission,d.photons,d.hits,d.time,r.a);if(!r.clr||c.score>r.s||(c.score===r.s&&d.time<r.t))Object.assign(r,{s:c.score,acc:c.acc,tb:c.tb,t:d.time,star:starOf(c.score),ph:d.photons});r.clr=true;u.badges=[...new Set(u.badges.concat(d.badges||[]))];out.stage=d.stage;out.rec=r;out.badges=u.badges}
- else if(a==='hstart'){const r=R(d.stage);r.ht++;out.stage=d.stage;out.rec=r}
- else if(a==='hdone'){const r=R(d.stage);if(d.ok)r.hb=Math.max(r.hb,hBonus(r.ht));out.stage=d.stage;out.rec=r}
- else if(a==='rank'){const list=Object.keys(db).map(k=>({id:k,total:Object.values(db[k].st).reduce((s,r)=>s+(r.s||0)+(r.hb||0),0)})).filter(x=>x.total>0).sort((x,y)=>y.total-x.total);
+ else if(a==='finish'){const r=R(d.stage);if(!r.a)r.a=1;if(r.clr&&r.a===1)r.a=2;const c=calc(d.stage,d.mission,d.photons,d.hits,d.falls,d.time,r.a,d.bonus);
+  if(!r.clr||c.score>r.s||(c.score===r.s&&d.time<r.t))Object.assign(r,{s:c.score,acc:c.acc,tb:c.tb,hb:d.bonus,t:d.time,star:c.star,ph:d.photons});
+  if(r.a===1){r.fs=c.star;if(c.acc===400&&d.bonus===150)r.ta=d.time}
+  r.clr=true;const set=new Set(u.badges.concat((d.badges||[]).filter(b=>b[0]!=='x')));
+  if(STAGES.every(s=>(u.st[s.id]||{}).fs===3))set.add('xperfect');
+  if(STAGES.every(s=>(u.st[s.id]||{}).clr)&&demoTops(db).filter(x=>x.id===id).length>=3)set.add('xtime');
+  u.badges=[...set];out.stage=d.stage;out.rec=r;out.badges=u.badges}
+ else if(a==='rank'){const list=Object.keys(db).map(k=>({id:k,total:Object.values(db[k].st).reduce((s,r)=>s+(r.s||0),0)})).filter(x=>x.total>0).sort((x,y)=>y.total-x.total);
   const cl={};Object.keys(db).forEach(k=>{const c=cl[k.slice(0,3)]=cl[k.slice(0,3)]||{key:k.slice(0,3),label:clsLabel(k),n:0,sum:0};c.n++;c.sum+=(list.find(x=>x.id===k)||{total:0}).total});
   const now=new Date();out.updated=[now.getHours(),now.getMinutes(),now.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':');
   out.top=list.slice(0,10).map((x,i)=>({rank:i+1,id:x.id,total:x.total}));out.classes=Object.values(cl).filter(c=>c.sum>0).map(c=>({key:c.key,label:c.label,avg:Math.round(c.sum/c.n)})).sort((x,y)=>y.avg-x.avg);
+  out.ta=demoTops(db);
   if(id&&u){const key=id.slice(0,3);let n=0;out.myClass=[];out.classKey=key;list.forEach((x,i)=>{if(x.id.slice(0,3)===key){n++;out.myClass.push({rank:n,id:x.id,total:x.total})}if(x.id===id)out.me={rank:i+1,total:x.total,classRank:n}})}
   return out}
- try{localStorage.setItem('lsc-demo',JSON.stringify(db))}catch(e){}
+ try{localStorage.setItem('lsc-demo2',JSON.stringify(db))}catch(e){}
  return out}
 
 function post(action,data){
@@ -448,15 +472,17 @@ function post(action,data){
 const call=(action,data)=>post(action,Object.assign({token:me&&me.token},data));
 
 /* 보낼 기록 대기열: 연결이 끊겨도 보관했다가 순서대로 다시 보낸다 */
-let queue=[];try{queue=JSON.parse(localStorage.getItem('lsc-q'))||[]}catch(e){}
-const saveQ=()=>{try{localStorage.setItem('lsc-q',JSON.stringify(queue))}catch(e){}};
+let queue=[];try{queue=JSON.parse(localStorage.getItem('lsc-q2'))||[]}catch(e){}
+const saveQ=()=>{try{localStorage.setItem('lsc-q2',JSON.stringify(queue))}catch(e){}};
 let flushing=false,syncErr=false;
 function enqueue(action,data){if(!me)return;queue.push({action,data:Object.assign({token:me.token},data)});saveQ();flush()}
 async function flush(){
  if(flushing)return;flushing=true;paintSync();
  while(queue.length){const it=queue[0];
   try{const r=await post(it.action,it.data);syncErr=false;
-   if(me&&it.data.token===me.token&&queue.length===1){if(r.rec&&r.stage)me.st[r.stage]=r.rec;if(r.badges)me.badges=r.badges;if(it.action==='finish'||it.action==='hdone')setTimeout(()=>{loadRank();if(state==='map')renderMap()},400)}}
+   if(me&&it.data.token===me.token){
+    if(r.badges){const got=TITLES.filter(t=>r.badges.includes(t.id)&&!me.badges.includes(t.id));me.badges=[...new Set(me.badges.concat(r.badges))];got.forEach(t=>toast('히든 등급 달성: '+t.name))}
+    if(queue.length===1){if(r.rec&&r.stage)me.st[r.stage]=r.rec;if(it.action==='finish')setTimeout(()=>{loadRank();if(state==='map')renderMap()},400)}}}
   catch(e){if(!e.server){syncErr=true;break}}
   queue.shift();saveQ()}
  flushing=false;paintSync()}
@@ -987,15 +1013,152 @@ explore:{title:'정지 궤도',intro:'인공위성은 높이 돌수록 한 바�
 };
 const HID_CONCEPT={straight:'바늘구멍 사진기: 상의 크기는 스크린 거리에 비례',reflect:'잠망경: 45° 거울 두 장으로 빛을 두 번 꺾는다',refract:'전반사: 임계각보다 큰 입사각에서 빛이 모두 반사',lens:'근시는 오목 렌즈, 원시는 볼록 렌즈로 교정',color:'물체의 색: 반사하는 빛의 색으로 정해진다',parallax:'1 pc ≈ 3.26광년',bright:'광도: 별이 실제로 내는 빛의 양',magnitude:'등급 차 5 = 밝기 100배 = 거리 10배',temp:'색과 광도로 주계열성·거성을 구분',galaxy:'우리은하는 막대 나선 은하',expand:'허블 법칙: 후퇴 속도는 거리에 비례',explore:'정지 궤도: 높이 약 36000 km, 주기 24시간'};
 
-/* ---------- 화면 전환·로그인·지도·랭킹 ---------- */
+/* ---------- 히든 스테이지 3개 ---------- */
+WORLDS.push({title:'히든 구역 · 미지의 영역',unit:'조건을 달성한 대원에게만 공개 · 점수 1.5배'});
+STAGES.push(
+ {id:'hmirror',world:2,hidden:true,need:[0],lvl:9,segs:[9,4],sky:false,name:'거울 미궁',place:'봉인된 광학실',sim:'hmirror',concept:['직각으로 놓인 두 거울에서 두 번 반사한 빛은 들어온 방향과 나란하게 되돌아간다.','유리 블록을 통과한 빛은 두 번 굴절해, 처음 방향과 나란하게 나온다.','볼록 렌즈: 물체가 초점 거리의 1.5배 위치에 있으면 2배 크기의 거꾸로 선 상이 생긴다.']},
+ {id:'hscale',world:2,hidden:true,need:[1],lvl:10,segs:[10,4],sky:true,name:'별의 저울',place:'심우주 관측대',sim:'hscale',concept:['연주 시차로 거리를 구하고, 거리와 겉보기 등급으로 절대 등급을 구한다.','색으로 표면 온도를, 겉보기 등급과 절대 등급의 차로 거리를 판단한다.','팽창을 거꾸로 되돌리면 모든 은하가 한 점에 모인다. 그때까지의 시간이 우주의 나이다.']},
+ {id:'hfinal',world:2,hidden:true,need:[0,1],lvl:11,segs:[11,5],sky:true,name:'최종 관측',place:'은하 끝 전망대',sim:'hfinal',concept:['굴절 망원경: 두 볼록 렌즈의 간격 = 두 초점 거리의 합, 배율 = 대물렌즈 초점 거리 ÷ 접안렌즈 초점 거리','별빛을 삼원색으로 나누면 파란빛의 비율이 클수록 표면 온도가 높다.','거리(pc) = 1 ÷ 연주 시차, 1 pc ≈ 3.26광년. 빛의 속력의 10%로 가면 광년 수의 10배만큼 해가 걸린다.']});
+
+const cornerY=i=>19*Math.tan(rad(i))-5,CORNER_T=cornerY(35);
+const slabR=i=>Math.asin(Math.sin(rad(i))/1.5),slabX=i=>8*Math.tan(rad(i))+4*Math.tan(slabR(i)),SLAB_T=slabX(40);
+const scopeOut=s=>s.L===50+s.f2?'나란하다 (선명)':s.L<50+s.f2?'퍼진다 (흐림)':'모인다 (흐림)';
+function lensShape(c,x,cy,H){c.fillStyle='rgba(90,147,255,.3)';c.strokeStyle=C.b;c.lineWidth=2;c.beginPath();c.ellipse(x,cy,9,H,0,0,TAU);c.fill();c.stroke()}
+
+SIMS.hmirror={
+ init:()=>({view:'corner',i:25,u:40}),
+ steps:[
+  {enter:s=>{s.view='corner';s.i=25},controls:[{type:'range',key:'i',label:'레이저를 아래로 기울인 각',min:20,max:50,step:1,unit:'°'}],
+   read:s=>'기울인 각 '+s.i+'° · 두 거울에서 반사',
+   text:'거울 두 장이 직각으로 맞닿아 있다. 레이저의 각도를 조절해, 두 번 반사된 빛으로 왼쪽 벽의 감지기를 맞히자.',
+   ok:s=>Math.abs(cornerY(s.i)-CORNER_T)<.3,fail:s=>cornerY(s.i)<CORNER_T?'되돌아온 빛이 감지기 아래쪽에 닿았다.':'되돌아온 빛이 감지기 위쪽으로 지나갔다.',
+   hint:'두 번 반사되어 돌아오는 빛은 처음 쏜 빛과 나란하다. 각을 키우면 돌아오는 빛이 벽의 더 높은 곳에 닿는다.',
+   explain:'직각으로 놓인 두 거울에서 두 번 반사한 빛은 들어온 방향과 나란하게 되돌아간다. 자전거 반사판과 달에 설치한 레이저 반사경이 이 원리를 쓴다.'},
+  {enter:s=>{s.view='slab';s.i=15},controls:[{type:'range',key:'i',label:'입사각',min:10,max:60,step:1,unit:'°'}],
+   read:s=>'입사각 '+s.i+'° → 유리 속 '+(slabR(s.i)*180/Math.PI).toFixed(0)+'° → 나온 뒤 '+s.i+'°',
+   text:'두꺼운 유리 블록 아래 바닥에 표적이 있다. 입사각을 조절해 유리를 통과한 빛으로 표적을 맞히자. 점선은 빛이 꺾이지 않았을 때의 길이다.',
+   ok:s=>Math.abs(slabX(s.i)-SLAB_T)<.1,fail:s=>slabX(s.i)<SLAB_T?'빛이 표적에 못 미쳤다. 입사각을 키워 보자.':'빛이 표적을 지나쳤다. 입사각을 줄여 보자.',
+   hint:'유리를 지나면 빛은 점선보다 광원 쪽으로 밀려난 곳에 닿는다. 표적을 똑바로 겨눌 때보다 더 비스듬히 쏘아야 한다.',
+   explain:'빛은 유리로 들어갈 때 법선 쪽으로, 나올 때는 그 반대로 꺾인다. 그래서 나온 빛은 처음 방향과 나란하지만 위치는 옆으로 밀려난다.'},
+  {enter:s=>{s.view='lens';s.u=40},controls:[{type:'range',key:'u',label:'물체까지의 거리 (초점 거리 15 cm)',min:16,max:60,step:.5,unit:' cm',fmt:v=>v.toFixed(1)}],
+   read:s=>'거꾸로 선 상 · 물체의 '+(15/(s.u-15)).toFixed(2)+'배',
+   text:'초점 거리 15 cm인 볼록 렌즈로, 크기가 물체의 정확히 2배인 거꾸로 선 상을 만들자.',
+   ok:s=>Math.abs(15/(s.u-15)-2)<.05,fail:s=>15/(s.u-15)>2?'상이 2배보다 크다. 물체를 렌즈에서 조금 멀리 옮기자.':'상이 2배보다 작다. 물체를 초점 쪽으로 옮기자.',
+   hint:'확대된 거꾸로 선 상은 물체가 초점 거리(15 cm)와 그 2배(30 cm) 사이에 있을 때 생긴다. 정확히 2배가 되는 곳은 그 한가운데다.',
+   explain:'물체가 초점 거리의 1.5배인 22.5 cm에 있으면 상은 렌즈 뒤 45 cm에 2배 크기로 생긴다. 영사기가 작은 화면을 크게 비추는 원리다.'}],
+ draw(c,w,h,s){
+  if(s.view==='lens'){SIMS.lens.draw(c,w,h,{el:'cvxL',u:s.u});return}
+  if(s.view==='corner'){const k=Math.min(w*.62/10,h*.8/12.5),x0=(w-10*k)/2,y0=h*.92,X=x=>x0+x*k,Y=y=>y0-y*k,a=rad(s.i),hit=Math.abs(cornerY(s.i)-CORNER_T)<.3;
+   Ln(c,X(0),Y(0),X(0),Y(12.5),C.line,3);Ln(c,X(0),Y(0),X(10),Y(0),'#cfd6ff',5);Ln(c,X(10),Y(0),X(10),Y(12.5),'#cfd6ff',5);
+   for(let v=.5;v<10;v+=1)Ln(c,X(v),Y(0)+4,X(v)-6,Y(0)+12,C.line,1.5);for(let v=.5;v<12.5;v+=1)Ln(c,X(10)+4,Y(v),X(10)+12,Y(v)+6,C.line,1.5);
+   let x=1,y=5,dx=Math.cos(a),dy=-Math.sin(a);
+   for(let n=0;n<4;n++){const tb=dy<0?-y/dy:1e9,tr=dx>0?(10-x)/dx:1e9,tl=dx<0?-x/dx:1e9,tt=dy>0?(12.5-y)/dy:1e9,t=Math.min(tb,tr,tl,tt),nx=x+dx*t,ny=y+dy*t;Ln(c,X(x),Y(y),X(nx),Y(ny),C.r,3);x=nx;y=ny;if(t===tb)dy=-dy;else if(t===tr)dx=-dx;else break}
+   if(hit)glow(c,X(0),Y(CORNER_T),34,'63,224,138',.8);dot(c,X(0),Y(CORNER_T),12,hit?C.g:C.hull2);c.strokeStyle=hit?C.g:C.ink;c.lineWidth=3;c.beginPath();c.arc(X(0),Y(CORNER_T),12,0,TAU);c.stroke();
+   T(c,'감지기',X(0)-18,Y(CORNER_T)+4,12,C.ink,'right');c.fillStyle=C.hull2;rr(c,X(1)-16,Y(5)-10,32,20,5);c.fill();T(c,'레이저',X(1),Y(5)-16,12,C.dim,'center');
+   T(c,'거울',X(5),Y(0)+30,13,C.dim,'center');T(c,'거울',X(10)+18,Y(6),13,C.dim,'left');return}
+  const k=Math.min(w*.86/17,h*.84/12),x0=w*.07,y0=h*.05,X=x=>x0+x*k,Y=y=>y0+y*k,ti=Math.tan(rad(s.i)),tr=Math.tan(slabR(s.i)),hit=Math.abs(slabX(s.i)-SLAB_T)<.1;
+  c.fillStyle='rgba(190,212,255,.2)';c.fillRect(0,Y(4),w,4*k);Ln(c,0,Y(4),w,Y(4),'#9fc0ff',2);Ln(c,0,Y(8),w,Y(8),'#9fc0ff',2);Ln(c,0,Y(12),w,Y(12),C.dim,3);
+  T(c,'공기',w-12,Y(2),13,C.dim,'right');T(c,'유리',w-12,Y(6),13,'#9fc0ff','right');T(c,'공기',w-12,Y(10),13,C.dim,'right');
+  Ln(c,X(4*ti),Y(4),X(12*ti),Y(12),C.dim,1.5,[3,7]);
+  Ln(c,X(0),Y(0),X(4*ti),Y(4),C.r,3);Ln(c,X(4*ti),Y(4),X(4*ti+4*tr),Y(8),C.r,3);Ln(c,X(4*ti+4*tr),Y(8),X(slabX(s.i)),Y(12),C.r,3);
+  if(hit)glow(c,X(SLAB_T),Y(12),36,'63,224,138',.8);c.fillStyle=hit?C.g:C.photon;c.beginPath();c.moveTo(X(SLAB_T),Y(12)-16);c.lineTo(X(SLAB_T)+11,Y(12)-5);c.lineTo(X(SLAB_T),Y(12)+5);c.lineTo(X(SLAB_T)-11,Y(12)-5);c.fill();
+  c.fillStyle=C.hull2;rr(c,X(0)-16,Y(0)-8,32,20,5);c.fill();dot(c,X(slabX(s.i)),Y(12),5,C.r);}
+};
+
+const HS_T=[['별 A','0.1″','1'],['별 B','0.01″','3'],['별 C','1″','-1']];
+const HS_C=[['가','적색',3200,'0.5','-5.0'],['나','백색',9000,'-1.5','1.4'],['다','청백색',15000,'2.0','-4.0'],['라','황백색',6800,'2.6','3.4']];
+SIMS.hscale={
+ init:()=>({view:'table',t:0}),
+ steps:[
+  {enter:s=>{s.view='table'},read:()=>'거리(pc) = 1 ÷ 연주 시차(″)',
+   text:'세 별의 관측 자료다. 실제로 가장 밝은 별과 그 절대 등급을 구하자.',options:['별 A, 절대 등급 1','별 B, 절대 등급 -2','별 C, 절대 등급 -1','별 B, 절대 등급 8'],answer:1,
+   hint:'먼저 거리를 구한다. 10 pc보다 10배 먼 별은 실제보다 5등급 어둡게, 1/10 거리의 별은 5등급 밝게 보인다.',
+   explain:'A는 10 pc에 있어 절대 등급이 겉보기와 같은 1이다. B는 100 pc에 있어 실제로는 5등급 더 밝은 -2, C는 1 pc에 있어 실제로는 5등급 어두운 4다. 가장 어둡게 보이는 B가 실제로는 가장 밝다.'},
+  {enter:s=>{s.view='cards'},read:()=>'태양: 황색 별',
+   text:'별 네 개의 색과 등급이다. 태양보다 표면 온도가 높으면서 10 pc보다 멀리 있는 별을 찾자.',options:['별 가','별 나','별 다','별 라'],answer:2,
+   hint:'태양(황색)보다 뜨거운 색은 황백색, 백색, 청백색, 청색이다. 10 pc보다 먼 별은 겉보기 등급이 절대 등급보다 크다.',
+   explain:'온도 조건은 나·다·라가 만족한다. 그중 겉보기 등급이 절대 등급보다 큰 별은 다(2.0 > -4.0)뿐이다. 가는 멀지만 차가운 적색 별이고, 나와 라는 10 pc보다 가깝다.'},
+  {enter:s=>{s.view='rewind';s.t=0},controls:[{type:'range',key:'t',label:'시간 되감기',min:0,max:70,step:10,unit:'억 년'}],
+   read:s=>'되감은 시간 '+s.t+'억 년 · 은하 A까지 '+(100*(1-s.t/140)).toFixed(0)+' Mpc',
+   text:'은하들이 지금의 속력 그대로 멀어져 왔다고 하자. 시간을 되감으며 은하 A의 거리를 살펴보고, 모든 은하가 한 점에 모이는 때를 구하자.',options:['약 70억 년 전','약 105억 년 전','약 140억 년 전','약 280억 년 전'],answer:2,
+   hint:'70억 년을 되감으면 거리가 얼마나 줄어드는지 본다. 남은 거리도 같은 빠르기로 줄어든다.',
+   explain:'70억 년 동안 거리가 절반이 되므로, 0이 되려면 140억 년이 걸린다. 먼 은하는 그만큼 빠르기 때문에 모든 은하가 같은 때에 한 점에 모인다. 이렇게 구한 값은 실제 우주의 나이 약 138억 년과 비슷하다.'}],
+ draw(c,w,h,s){
+  if(s.view==='table'){const xs=[.2,.5,.8],y0=h*.22,dy=h*.15;['별','연주 시차','겉보기 등급'].forEach((t,i)=>T(c,t,w*xs[i],y0,15,C.photon,'center',1));Ln(c,w*.08,y0+14,w*.92,y0+14,C.line,2);
+   HS_T.forEach((r,j)=>{r.forEach((t,i)=>T(c,t,w*xs[i],y0+dy*(j+1),20,C.ink,'center',1));Ln(c,w*.08,y0+dy*(j+1)+16,w*.92,y0+dy*(j+1)+16,'rgba(52,62,134,.5)',1)});return}
+  if(s.view==='cards'){starfield(c,w,h);const cw=w*.21,ch=h*.56,y=h*.16;HS_C.forEach((r,i)=>{const x=w*.035+i*(cw+w*.03);c.fillStyle=C.hull;rr(c,x,y,cw,ch,12);c.fill();c.strokeStyle=C.line;c.lineWidth=1.5;c.stroke();
+    const col=tcol(r[2]).join(',');glow(c,x+cw/2,y+ch*.26,ch*.2,col,.8);dot(c,x+cw/2,y+ch*.26,ch*.08,'rgb('+col+')');
+    T(c,'별 '+r[0],x+cw/2,y+ch*.52,18,C.photon,'center',1);T(c,r[1],x+cw/2,y+ch*.65,14,C.ink,'center');T(c,'겉보기 '+r[3],x+cw/2,y+ch*.78,13,C.dim,'center');T(c,'절대 '+r[4],x+cw/2,y+ch*.9,13,C.dim,'center')});return}
+  starfield(c,w,h);const f=1-s.t/140,k=Math.min(w,h)*.44,cx=w/2,cy=h*.47;
+  GAL.forEach((g,i)=>{const x=cx+g[0]*k*f,y=cy+g[1]*k*f,x1=cx+g[0]*k,y1=cy+g[1]*k;if(i&&s.t>0)arrow(c,x1,y1,x,y,'rgba(255,212,71,.5)',1.5);
+   c.save();c.translate(x,y);c.rotate(i*1.3);glow(c,0,0,16,i?'190,212,255':'255,212,71',.7);c.fillStyle=i?'#dfe6ff':C.photon;c.beginPath();c.ellipse(0,0,12,5,0,0,TAU);c.fill();c.restore();
+   if(i===5)T(c,'은하 A',x+16,y+18,13,C.ink,'left',1);if(!i)T(c,'우리은하',x,y+32,12,C.photon,'center')});}
+};
+
+const HF_S=[['X',100,60,30],['Y',70,85,100],['Z',100,95,80]];
+SIMS.hfinal={
+ init:()=>({view:'scope',f2:20,L:50,r:50,g:50,b:50}),
+ steps:[
+  {enter:s=>{s.view='scope';s.f2=20;s.L=50},controls:[{type:'select',key:'f2',label:'접안렌즈의 초점 거리',options:[{v:5,label:'5 cm'},{v:10,label:'10 cm'},{v:20,label:'20 cm'}]},{type:'range',key:'L',label:'두 렌즈 사이의 간격',min:40,max:80,step:1,unit:' cm'}],
+   read:s=>'배율 '+(50/s.f2)+'배 · 나온 빛이 '+scopeOut(s),
+   text:'초점 거리 50 cm인 대물렌즈에 접안렌즈를 골라 끼우고 간격을 맞춰, 배율 5배의 선명한 망원경을 만들자. 접안렌즈를 지난 별빛이 나란해야 선명하게 보인다.',
+   ok:s=>s.f2===10&&s.L===60,fail:s=>s.f2!==10?'배율이 5배가 아니다. 배율 = 대물렌즈의 초점 거리 ÷ 접안렌즈의 초점 거리.':'배율은 맞지만, 나온 빛이 나란하지 않아 상이 흐리다.',
+   hint:'두 렌즈의 초점이 한 점에서 만나야 한다. 간격 = 두 초점 거리의 합.',
+   explain:'대물렌즈가 모은 별빛을 접안렌즈가 다시 나란하게 펴 준다. 간격은 50 + 10 = 60 cm, 배율은 50 ÷ 10 = 5배다. 대물렌즈가 클수록 빛을 많이 모아 어두운 천체까지 볼 수 있다.'},
+  {enter:s=>{s.view='spec';s.r=s.g=s.b=50},controls:[{type:'range',key:'r',label:'빨간빛 세기',min:0,max:100,step:10,unit:'%'},{type:'range',key:'g',label:'초록빛 세기',min:0,max:100,step:10,unit:'%'},{type:'range',key:'b',label:'파란빛 세기',min:0,max:100,step:10,unit:'%'}],
+   read:s=>'내가 만든 빛: 빨강 '+s.r+' · 초록 '+s.g+' · 파랑 '+s.b,
+   text:'세 별의 빛을 삼원색으로 나눠 잰 세기다. 같은 세기로 빛을 합성해 각 별의 색을 직접 만들어 보고, 표면 온도가 높은 별부터 나열하자.',options:['Y > Z > X','X > Z > Y','Z > Y > X','Y > X > Z'],answer:0,
+   hint:'파란빛의 비율이 클수록 표면 온도가 높고, 빨간빛만 강할수록 낮다.',
+   explain:'Y는 파란빛이 가장 강한 청백색 별, Z는 세 빛이 고르게 강한 황백색 별, X는 빨간빛이 두드러진 주황색 별이다. 표면 온도는 Y > Z > X 순이다.'},
+  {enter:s=>{s.view='trip'},read:()=>'1 pc ≈ 3.26광년 · 탐사선의 속력 = 빛의 속력의 10%',
+   text:'연주 시차가 0.25″인 별에 탐사선을 보낸다. 빛의 속력의 10%로 날아가면 도착하는 데 얼마나 걸릴까?',options:['약 13년','약 40년','약 130년','약 400년'],answer:2,
+   hint:'거리(pc) = 1 ÷ 연주 시차. 광년으로 바꾼 뒤, 빛보다 10배 느리다는 점을 생각한다.',
+   explain:'거리는 1 ÷ 0.25 = 4 pc, 약 13광년이다. 빛으로 13년 걸리는 거리를 10분의 1 속력으로 가면 약 130년이 걸린다. 가까운 별조차 이렇게 멀어서, 지금의 별 탐사는 망원경 관측에 의존한다.'}],
+ draw(c,w,h,s,t){
+  if(s.view==='scope'){const cy=h*.47,kx=w*.84/105,x0=w*.1,xo=x0,xe=x0+s.L*kx,H=h*.3;Ln(c,0,cy,w,cy,C.line,1.5);
+   [-1,-.5,.5,1].forEach(q=>{const y1=H*.8*q,ye=y1*(1-s.L/50),sl=-y1/(50*kx)-ye/(s.f2*kx),x2=xe+25*kx;Ln(c,0,cy+y1,xo,cy+y1,C.photon,2);Ln(c,xo,cy+y1,xe,cy+ye,C.photon,2);Ln(c,xe,cy+ye,x2,cy+ye+sl*25*kx,C.photon,2)});
+   lensShape(c,xo,cy,H);lensShape(c,xe,cy,H*.55);dot(c,xo+50*kx,cy,4,C.r);T(c,'대물렌즈의 초점',xo+50*kx,cy+H+20,12,C.r,'center');
+   T(c,'대물렌즈 (50 cm)',xo,cy-H-10,12,C.dim,'center');T(c,'접안렌즈 ('+s.f2+' cm)',xe,cy-H*.55-10,12,C.dim,'center');T(c,'별빛',10,cy-H*.8-10,12,C.photon,'left');return}
+  if(s.view==='spec'){const bw=w*.035,bh=h*.42,y0=h*.66;HF_S.forEach((r,i)=>{const x=w*.08+i*w*.2;[C.r,C.g,C.b].forEach((col,j)=>{const v=r[j+1]/100*bh;c.fillStyle=col;c.fillRect(x+j*(bw+4),y0-v,bw,v);T(c,r[j+1]+'',x+j*(bw+4)+bw/2,y0-v-6,11,C.dim,'center')});T(c,'별 '+r[0],x+(bw*3+8)/2,y0+26,17,C.photon,'center',1)});
+   Ln(c,w*.05,y0,w*.66,y0,C.line,2);const cx=w*.84,cy=h*.42,R=Math.min(w*.11,h*.22),col=[s.r,s.g,s.b].map(v=>Math.round(v*2.55)).join(',');dot(c,cx,cy,R*1.5,'#000');glow(c,cx,cy,R*1.5,col,.6);dot(c,cx,cy,R,'rgb('+col+')');T(c,'내가 만든 빛',cx,cy+R*1.5+22,13,C.dim,'center');return}
+  starfield(c,w,h);const y=h*.45,x1=w*.14,x2=w*.86,xs=x2-(x2-x1)*(.25+.5*((t*.05)%1));glow(c,x1,y,30,'255,244,200',.9);dot(c,x1,y,6,'#fff');dot(c,x2,y,14,'#2f6fe0');
+  Ln(c,x1+24,y,x2-22,y,C.line,1.5,[4,8]);c.fillStyle=C.ink;c.beginPath();c.moveTo(xs-14,y);c.lineTo(xs+8,y-7);c.lineTo(xs+8,y+7);c.fill();c.fillStyle=C.photon;c.fillRect(xs+8,y-3,8,6);
+  T(c,'목표 별 · 연주 시차 0.25″',x1,y+52,13,C.ink,'left');T(c,'지구',x2,y+40,13,C.ink,'center');T(c,'도착까지 걸리는 시간 = ?',w/2,y-30,16,C.photon,'center',1);}
+};
+
+/* 히든 스테이지의 숨겨진 공간 */
+function specBar(c,x,y,w,hh,lines,shift){const g=c.createLinearGradient(x,0,x+w,0);['#7a3cff','#3f6bff','#2fd0ff','#3fe08a','#ffe14a','#ff9a3a','#ff4a4a'].forEach((col,i)=>g.addColorStop(i/6,col));c.fillStyle=g;c.fillRect(x,y,w,hh);lines.forEach(p=>{c.fillStyle='#000';c.fillRect(x+(p+shift)*w-2,y,4,hh)})}
+HID.hmirror={title:'프리즘과 빛의 분산',intro:'유리 속에서는 빛의 색에 따라 꺾이는 정도가 다르다. 파장이 짧은 빛일수록 더 많이 꺾이고, 빛의 파장은 빨강에서 보라로 갈수록 짧아진다.',
+ init:()=>({}),read:()=>'흰빛 → 프리즘 → ①②③',
+ steps:[{text:'흰빛이 프리즘을 지나 여러 색으로 갈라졌다. 가장 많이 꺾인 ③의 자리에 오는 빛은?',options:['빨간빛','초록빛','보랏빛'],answer:2,
+  explain:'보랏빛은 파장이 가장 짧아 가장 많이 꺾이고, 빨간빛은 가장 적게 꺾인다. 무지개도 물방울 속에서 햇빛이 색에 따라 다르게 굴절해 생긴다.'}],
+ draw(c,w,h){const cx=w*.42,cy=h*.5,R=Math.min(w,h)*.26;c.fillStyle='rgba(190,212,255,.18)';c.strokeStyle='#9fc0ff';c.lineWidth=2;c.beginPath();c.moveTo(cx,cy-R);c.lineTo(cx+R*.95,cy+R*.7);c.lineTo(cx-R*.95,cy+R*.7);c.closePath();c.fill();c.stroke();
+  const ex=cx-R*.42,ey=cy,ox=cx+R*.42,oy=cy;Ln(c,w*.04,cy+R*.35,ex,ey,'#fff',3);Ln(c,ex,ey,ox,oy,'rgba(255,255,255,.7)',3);
+  [[.12,'①'],[.3,'②'],[.5,'③']].forEach(a=>{const x2=w*.94,y2=oy+(x2-ox)*a[0];Ln(c,ox,oy,x2,y2,'rgba(238,241,255,.75)',2.5);T(c,a[1],x2-8,y2-8,18,C.photon,'right',1)});T(c,'흰빛',w*.05,cy+R*.35-10,13,C.dim,'left');}};
+HID.hscale={title:'별의 크기',intro:'별의 광도는 표면적에 비례하고, 표면 온도가 높을수록 커진다. 별의 표면적은 반지름의 제곱에 비례한다.',
+ init:()=>({}),read:()=>'표면 온도가 같은 두 별',
+ steps:[{text:'별 P와 Q는 표면 온도가 같다. Q의 광도가 P의 100배라면, Q의 반지름은 P의 몇 배일까?',options:['10배','50배','100배','10000배'],answer:0,
+  explain:'온도가 같으면 광도는 표면적에 비례한다. 표면적이 100배가 되려면 반지름은 10배여야 한다(10 × 10 = 100). 거성이 밝은 까닭은 이렇게 크기 때문이다.'}],
+ draw(c,w,h){starfield(c,w,h);const y=h*.45,r=Math.min(w,h)*.05;glow(c,w*.25,y,r*2.2,'255,165,74',.8);dot(c,w*.25,y,r,'#ffa54a');T(c,'별 P · 광도 1',w*.25,y+r*2.2+26,14,C.ink,'center',1);
+  c.strokeStyle='#ffa54a';c.lineWidth=2.5;c.setLineDash([6,7]);c.beginPath();c.arc(w*.68,y,r*3.4,0,TAU);c.stroke();c.setLineDash([]);T(c,'?',w*.68,y+12,40,'#ffa54a','center',1);T(c,'별 Q · 광도 100',w*.68,y+r*3.4+26,14,C.ink,'center',1);}};
+HID.hfinal={title:'적색 편이',intro:'멀어지는 광원에서 온 빛은 파장이 길어져, 스펙트럼의 검은 선이 붉은 쪽으로 밀린다. 빠르게 멀어질수록 더 많이 밀린다.',
+ init:()=>({}),read:()=>'왼쪽 보라 ← 스펙트럼 → 오른쪽 빨강',
+ steps:[{text:'실험실에서 잰 스펙트럼과 두 은하의 스펙트럼이다. 우리에게서 더 멀리 있는 은하는?',options:['은하 A','은하 B','이 자료로는 알 수 없다'],answer:1,
+  explain:'선이 더 많이 밀린 은하 B가 더 빠르게 멀어진다. 우주가 팽창할 때 멀리 있는 은하일수록 빠르게 멀어지므로, B가 더 멀리 있다. 허블은 이 방법으로 우주의 팽창을 알아냈다.'}],
+ draw(c,w,h){const x=w*.26,bw=w*.66,bh=h*.13;[['실험실 (기준)',0],['은하 A',.04],['은하 B',.13]].forEach((r,i)=>{const y=h*.14+i*h*.24;specBar(c,x,y,bw,bh,[.3,.52],r[1]);T(c,r[0],x-12,y+bh/2+5,14,C.ink,'right',1)});
+  Ln(c,x+.3*bw,h*.1,x+.3*bw,h*.78,'rgba(238,241,255,.4)',1,[3,5]);Ln(c,x+.52*bw,h*.1,x+.52*bw,h*.78,'rgba(238,241,255,.4)',1,[3,5]);}};
+Object.assign(HID_CONCEPT,{hmirror:'분산: 파장이 짧은 빛일수록 더 많이 굴절',hscale:'온도가 같으면 광도는 반지름의 제곱에 비례',hfinal:'적색 편이: 빠르게 멀어질수록 스펙트럼이 붉은 쪽으로 이동'});
+
+/* ---------- 화면 전환·지도·랭킹·등급 ---------- */
 let state='login',run=null,sim=null,clock=0,tab='stages',logs=[],pwForced=true;
 const keys={left:false,right:false,jumpQ:0,act:false};
 const SCREENS=['login','pw','map','sim','result'];
 function show(name){state=name;SCREENS.forEach(s=>{$('#'+s).hidden=s!==name});const p=name==='play';$('#hud').hidden=$('#padL').hidden=$('#padR').hidden=!p;$('#modal').hidden=true;keys.left=keys.right=false;if(p)resize()}
 let toastT=0;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},2600)}
 const starStr=n=>'★'.repeat(n)+'<em>'+'★'.repeat(3-n)+'</em>';
-const unlocked=i=>!!me.openAll||i===0||STAGES[i].world!==STAGES[i-1].world||cleared(STAGES[i-1].id);
-const stageNo=i=>(STAGES[i].world+1)+'-'+(STAGES.slice(0,i+1).filter(d=>d.world===STAGES[i].world).length);
+const hidOpen=d=>!!me.openHidden||d.need.every(w=>worldDone(w));
+const unlocked=i=>{const d=STAGES[i];if(d.hidden)return hidOpen(d);return !!me.openAll||i===0||d.world!==STAGES[i-1].world||cleared(STAGES[i-1].id)};
+const stageNo=i=>{const d=STAGES[i];return d.hidden?'H-'+(i-11):(d.world+1)+'-'+(STAGES.slice(0,i+1).filter(x=>x.world===d.world).length)};
 
 function rk(n,label,val,isMe){return `<div class="rk${n<=3?' top':''}${isMe?' me':''}"><b>${n}</b><span>${esc(label)}</span><span>${val}</span></div>`}
 function rankHtml(full){
@@ -1007,33 +1170,60 @@ function rankHtml(full){
  const b=d.classes.map((c,i)=>rk(i+1,c.label,c.avg,!!mid&&d.classKey===c.key)).join('');
  h+='<div class="rankcols"><div><h4>전체 상위 10명</h4>'+(a||none)+'</div><div><h4>학급 대항 (평균 점수)</h4>'+(b||none)+'</div>';
  if(full&&mid&&d.myClass)h+='<div><h4>우리 반 ('+clsLabel(mid)+')</h4>'+(d.myClass.map(r=>rk(r.rank,r.id,r.total,r.id===mid)).join('')||none)+'</div>';
- return h+'</div><p class="dim" style="margin-top:8px">랭킹은 최대 1분 간격으로 갱신된다. 동점이면 총 소요 시간이 짧은 쪽이 위다.</p>'}
+ h+='</div>';
+ if(full&&mid){const m={};(d.ta||[]).forEach(x=>{m[x.s]=x});
+  h+='<h4 class="tahead">스테이지별 타임어택 1위</h4><div class="tagrid">'+STAGES.map((sd,i)=>{if(sd.hidden&&!unlocked(i))return'';const x=m[sd.id];
+   return `<div class="rk ta${x&&x.id===mid?' me':''}"><b>${stageNo(i)}</b><span>${sd.name}</span><span>${x?esc(x.id)+' · '+Number(x.t).toFixed(1)+'초':'기록 없음'}</span></div>`}).join('')+'</div>'
+   +'<p class="dim" style="margin-top:6px">타임어택에는 첫 도전에서 정확도 400점과 숨겨진 공간 보너스 150점을 모두 받은 기록만 오른다.</p>'}
+ return h+'<p class="dim" style="margin-top:6px">랭킹은 최대 1분 간격으로 갱신된다. 동점이면 총 소요 시간이 짧은 쪽이 위다.</p>'}
 function paintMyRank(){const d=rankData;$('#mapMyRank').textContent=d&&d.me&&me?'내 순위: 전체 '+d.me.rank+'위 · 우리 반 '+d.me.classRank+'위':''}
 function paintRank(){$('#rankLogin').innerHTML=rankHtml(false);if(state==='map'){paintMyRank();if(tab==='rank')$('#mapBody').innerHTML='<div class="rankcard">'+rankHtml(true)+'</div>'}}
 function loadRank(){return call('rank',{}).then(d=>{rankData=d;paintRank()}).catch(()=>{})}
 
+function gradeHtml(){
+ const x=total(),cur=rank(x),G='<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))">';
+ let h='<div class="world"><h3>대원 등급<small>총점으로 정해진다</small></h3>'+G;
+ RANKS.forEach((r,i)=>{h+=`<div class="badge${i<=cur?' on':''}"><div class="medal">${i+1}</div><div><strong>${r[1]}${i===cur?' · 현재 등급':''}</strong><span>총점 ${r[0]}점 이상</span></div></div>`});
+ h+='</div></div><div class="world"><h3>히든 등급<small>특별한 조건을 달성한 대원만 얻는다</small></h3>'+G;
+ TITLES.forEach(t=>{const on=me.badges.includes(t.id);h+=`<div class="badge${on?' on':''}"><div class="medal">${on?'★':'?'}</div><div><strong>${on?t.name:'???'}</strong><span>${on?t.desc:'달성 조건은 비공개'}</span></div></div>`});
+ h+=`</div></div><div class="card"><h4>점수 규칙</h4><ul>
+ <li>한 판의 점수 = (정확도 + 시간 보너스 + 숨겨진 공간 보너스) × 도전 계수. 가장 높은 한 판이 기록된다.</li>
+ <li>정확도(최대 400): 미션 1개 100점(오답 -40, 힌트 -15), 광자 1개 10점, 충돌과 구덩이 추락 1회마다 -10점</li>
+ <li>시간 보너스(최대 200): 빨리 클리어할수록 크고, 2분을 넘기면 0점</li>
+ <li>숨겨진 공간 보너스(최대 150): 다시 들어갈수록 줄고, 충돌과 추락 1회마다 -10점</li>
+ <li>도전 계수: 첫 도전 100%, 두 번째 90%, 세 번째부터 80%. 실험 장치를 처음 연 순간 도전 1회로 센다.</li>
+ <li>★3은 500점 이상, ★2는 350점 이상</li>${STAGES.some((d,i)=>d.hidden&&unlocked(i))?'<li>히든 스테이지: 점수 1.5배(★3은 750점, ★2는 525점), 시간 보너스는 3분을 넘기면 0점</li>':''}</ul></div>`;
+ return h}
 function renderMap(){
- const x=total(),rkI=rank(x),nx=RANKS[rkI+1];
- $('#mapRank').textContent='대원 등급 '+(rkI+1)+' · '+RANKS[rkI][1];$('#mapName').textContent=me.id+' · '+clsLabel(me.id);
+ const x=total(),rkI=rank(x),nx=RANKS[rkI+1],shown=STAGES.filter((d,i)=>!d.hidden||unlocked(i)).length;
+ $('#mapRank').textContent='대원 등급 '+(rkI+1)+' · '+RANKS[rkI][1]+myTitles().map(t=>' · '+t.name).join('');$('#mapName').textContent=me.id+' · '+clsLabel(me.id);
  $('#mapXp').style.width=(nx?(x-RANKS[rkI][0])/(nx[0]-RANKS[rkI][0])*100:100)+'%';
  $('#mapNext').textContent=nx?'다음 등급 '+nx[1]+'까지 '+(nx[0]-x)+'점':'최고 등급 달성';
- $('#sXp').textContent=x;$('#sStar').textContent=totStars()+'/36';$('#sHid').textContent=totHid()+'/12';$('#sBg').textContent=me.badges.length+'/'+BADGES.length;
+ $('#sXp').textContent=x;$('#sStar').textContent=totStars()+'/'+shown*3;$('#sHid').textContent=totHid()+'/'+shown;$('#sBg').textContent=me.badges.filter(b=>b[0]!=='x').length+'/'+BADGES.length;
  paintMyRank();paintSync();
  document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab));
  let h='';
- if(tab==='stages')WORLDS.forEach((w,wi)=>{h+=`<div class="world"><h3>${w.title}<small>${w.unit}</small></h3><div class="grid">`;
-  STAGES.forEach((d,i)=>{if(d.world!==wi)return;const u=unlocked(i),r=rec(d.id);
+ if(tab==='stages')WORLDS.forEach((w,wi)=>{const list=STAGES.map((d,i)=>[d,i]).filter(a=>a[0].world===wi&&(!a[0].hidden||unlocked(a[1])));if(!list.length)return;
+  h+=`<div class="world"><h3>${w.title}<small>${w.unit}</small></h3><div class="grid">`;
+  list.forEach(a=>{const d=a[0],i=a[1],u=unlocked(i),r=rec(d.id);
    h+=`<button type="button" class="stage${u?'':' locked'}" data-i="${i}" ${u?'':'disabled'}><span class="no">STAGE ${stageNo(i)}</span><span class="nm">${d.name}</span><span class="pl">${d.place}</span>`
-    +(u?`<span class="sc">${r.clr?r.s+'점':(r.a?'도전 중':'미도전')}${r.hb?' <i>+'+r.hb+' 숨은 공간</i>':''}${r.a?' · 도전 '+r.a+'회':''}</span><span class="st">${starStr(r.clr?r.star:0)}</span>`:'<span class="st">앞 스테이지를 먼저 클리어</span>')+'</button>'});
+    +(u?`<span class="sc">${r.clr?'최고 '+r.s+'점':(r.a?'도전 중':'미도전')}${r.clr&&r.hb?' <i>숨은 공간 +'+r.hb+'</i>':''}${r.a?' · 도전 '+r.a+'회':''}${r.ta?' · 타임어택 '+Number(r.ta).toFixed(1)+'초':''}</span><span class="st">${starStr(r.clr?r.star:0)}</span>`:'<span class="st">앞 스테이지를 먼저 클리어</span>')+'</button>'});
   h+='</div></div>'});
  else if(tab==='rank')h='<div class="rankcard">'+rankHtml(true)+'</div>';
+ else if(tab==='grade')h=gradeHtml();
  else if(tab==='badges'){h='<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">';BADGES.forEach(b=>{const on=me.badges.includes(b.id);h+=`<div class="badge${on?' on':''}"><div class="medal">${b.name[0]}</div><div><strong>${b.name}</strong><span>${b.desc}</span></div></div>`});h+='</div>'}
- else{h='<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">';STAGES.forEach(d=>{const on=cleared(d.id),hb=rec(d.id).hb>0;h+=`<div class="card${on?'':' locked'}"><h4>${d.name}</h4>${on?'<ul>'+d.concept.map(c=>'<li>'+c+'</li>').join('')+(hb?'<li style="color:var(--photon)">확장: '+HID_CONCEPT[d.id]+'</li>':'')+'</ul>':'스테이지를 클리어하면 기록된다.'}</div>`});h+='</div>'}
+ else{h='<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">';STAGES.forEach((d,i)=>{if(d.hidden&&!unlocked(i))return;const on=cleared(d.id),hb=rec(d.id).hb>0;h+=`<div class="card${on?'':' locked'}"><h4>${d.name}</h4>${on?'<ul>'+d.concept.map(c=>'<li>'+c+'</li>').join('')+(hb?'<li style="color:var(--photon)">확장: '+HID_CONCEPT[d.id]+'</li>':'')+'</ul>':'스테이지를 클리어하면 기록된다.'}</div>`});h+='</div>'}
  $('#mapBody').innerHTML=h;
 }
-function goMap(){run=null;sim=null;renderMap();show('map');loadRank()}
+function checkReveal(){
+ let seen=[];try{seen=JSON.parse(localStorage.getItem('lsc-seen-'+me.id))||[]}catch(e){}
+ const fresh=STAGES.filter((d,i)=>d.hidden&&unlocked(i)&&!seen.includes(d.id));if(!fresh.length)return;
+ try{localStorage.setItem('lsc-seen-'+me.id,JSON.stringify(seen.concat(fresh.map(d=>d.id))))}catch(e){}
+ $('#modalBox').innerHTML=`<p class="eyebrow">히든 스테이지 공개</p><h2>${fresh.map(d=>d.name).join(' · ')}</h2><p>조건을 달성해, 숨겨져 있던 스테이지가 지도에 나타났다.</p><p>기본 스테이지보다 길고 어렵다. 대신 점수가 1.5배다.</p><div class="row"><button class="btn" type="button" data-act="close">확인</button></div>`;
+ $('#modal').hidden=false;jingle([392,523,659,784,1047])}
+function goMap(){run=null;sim=null;renderMap();show('map');loadRank();checkReveal()}
 
-function setMe(r,token){me={id:r.id,token:token||r.token,st:r.st||{},badges:r.badges||[],openAll:!!r.openAll};try{sessionStorage.setItem('lsc-me',JSON.stringify({id:me.id,token:me.token}))}catch(e){}}
+function setMe(r,token){me={id:r.id,token:token||r.token,st:r.st||{},badges:r.badges||[],openAll:!!r.openAll,openHidden:!!r.openHidden};try{sessionStorage.setItem('lsc-me',JSON.stringify({id:me.id,token:me.token}))}catch(e){}}
 function logout(msg){me=null;run=null;sim=null;try{sessionStorage.removeItem('lsc-me')}catch(e){}$('#inPw').value='';$('#loginMsg').textContent=msg||'';show('login');loadRank()}
 function askPw(forced){pwForced=forced;$('#pw1').value=$('#pw2').value='';$('#pwMsg').textContent='';$('#btnPwCancel').hidden=forced;$('#btnPw').textContent=forced?'변경하고 시작':'변경';$('#pwWhy').textContent=forced?'처음 로그인했다. 나만 아는 비밀번호로 바꿔야 탐사를 시작할 수 있다.':'새 비밀번호를 정한다.';show('pw')}
 $('#loginForm').addEventListener('submit',e=>{e.preventDefault();const id=$('#inId').value.trim(),pw=$('#inPw').value,m=$('#loginMsg'),b=$('#btnLogin');
@@ -1059,52 +1249,57 @@ window.addEventListener('resize',resize);
 
 const SEG_W=370;
 function newLevel(w1){return{w1,g:w1?1000:1900,jv:w1?560:680,plats:[],pits:[],lasers:[],drones:[],photons:[],hidden:false}}
-function pickType(R,lvl,last){
- const w=[['plat',Math.max(.6,2-lvl*.25)],['pit',2],['drone',1.5],['wide',lvl>=1?1+lvl*.3:0],['laser',lvl>=2?1+lvl*.3:0],['fly',lvl>=3?.5+lvl*.25:0]].filter(a=>a[0]!==last);
+function pickType(R,lvl,last,cnt,cap){
+ const w=[['plat',Math.max(.6,2-lvl*.25)],['pit',2],['drone',1.5],['wide',lvl>=1?1+lvl*.3:0],['laser',lvl>=2?1+lvl*.3:0],['fly',lvl>=3?.5+lvl*.25:0]].filter(a=>a[0]!==last&&!(cap&&cap[a[0]]!=null&&(cnt[a[0]]||0)>=cap[a[0]]));
  let s=0;w.forEach(a=>s+=a[1]);let x=R()*s;for(const a of w){x-=a[1];if(x<=0)return a[0]}return'pit'}
-/* 구간 하나(폭 370)를 만든다. 구간마다 광자 자리 하나가 나온다. */
+/* 구간 하나(폭 370)를 만든다. */
 function addSeg(lv,R,type,s,lvl,withPhoton){
- const apex=lv.jv*lv.jv/(2*lv.g),maxH=Math.min(apex*.75,lv.w1?120:90),sp=70+lvl*12;let ph;
+ const apex=lv.jv*lv.jv/(2*lv.g),maxH=Math.min(apex*.75,lv.w1?120:90),sp=Math.min(170,70+lvl*12);let ph;
  if(type==='plat'){const pw=120+R()*40|0,py=55+R()*(maxH-55)|0,px=s+80+R()*30|0;lv.plats.push({x:px,y:py,w:pw});ph={x:px+pw/2,y:py+46};
   if(lvl>=2&&R()<.6){const uy=py+maxH*.85|0;lv.plats.push({x:px+pw+26,y:uy,w:84});ph={x:px+pw+68,y:uy+46}}}
  else if(type==='pit'){const pw=lv.w1?150+R()*50:95+R()*35,a=s+130;lv.pits.push({a,b:a+pw});ph={x:a+pw/2,y:apex*.6+24}}
- else if(type==='wide'){const a=s+(lv.w1?35:50),b=a+(lv.w1?305:275);lv.pits.push({a,b});lv.plats.push({x:a+14,y:0,w:86,mv:{a:a+14,b:b-100,v:60+lvl*8,d:1},dx:0});ph={x:(a+b)/2,y:96}}
- else if(type==='laser'){lv.lasers.push({x:s+185,on:1.1+lvl*.05,off:1.25,ph:R()*2});ph={x:s+185,y:34}}
+ else if(type==='wide'){const a=s+(lv.w1?35:50),b=a+(lv.w1?305:275);lv.pits.push({a,b});lv.plats.push({x:a+14,y:0,w:86,mv:{a:a+14,b:b-100,v:Math.min(130,60+lvl*8),d:1},dx:0});ph={x:(a+b)/2,y:96}}
+ else if(type==='laser'){lv.lasers.push({x:s+185,on:1.1+Math.min(lvl,8)*.05,off:1.25,ph:R()*2});ph={x:s+185,y:34}}
  else if(type==='drone'){lv.drones.push({x:s+60,y:0,a:s+40,b:s+330,v:sp,dead:false});ph={x:s+185,y:34}}
  else{lv.drones.push({x:s+60,y:30,a:s+40,b:s+330,v:sp*.9,fly:true,dead:false});const px=s+130;lv.plats.push({x:px,y:maxH|0,w:110});ph={x:px+55,y:maxH+46}}
  if(withPhoton)lv.photons.push(ph)}
-function fillSegs(lv,R,lvl,x,n,fixed,withPhoton){let last='';for(let i=0;i<n;i++){const t=fixed?fixed[i]:pickType(R,lvl,last);addSeg(lv,R,t,x,lvl,withPhoton);last=t;x+=SEG_W}return x}
-const stageLvl=idx=>STAGES[idx].world===1?idx-4:idx;
+function fillSegs(lv,R,lvl,x,n,fixed,phSet,off,cap){let last='';const cnt={};for(let i=0;i<n;i++){const t=fixed?fixed[i]:pickType(R,lvl,last,cnt,cap);cnt[t]=(cnt[t]||0)+1;addSeg(lv,R,t,x,lvl,phSet?phSet(off+i):false);last=t;x+=SEG_W}return x}
+const stageLvl=idx=>{const d=STAGES[idx];return d.hidden?d.lvl:d.world===1?idx-4:idx};
 function buildMain(idx){
- const lv=newLevel(STAGES[idx].world===1),lvl=stageLvl(idx),R=rng(1000+idx*77);
- let x=fillSegs(lv,R,lvl,400,7,lvl===0?['plat','pit','drone','plat','pit','plat','drone']:null,true);
+ const d=STAGES[idx],lv=newLevel(d.hidden?d.sky:d.world===1),lvl=stageLvl(idx),R=rng(1000+idx*77),n1=(d.segs||[7,3])[0],n2=(d.segs||[7,3])[1],N=n1+n2,phSet=i=>Math.floor((i+1)*10/N)>Math.floor(i*10/N);
+ let x=fillSegs(lv,R,lvl,400,n1,lvl===0?['plat','pit','drone','plat','pit','plat','drone']:null,phSet,0);
  lv.station={x:x+150,done:false};lv.gateX=x+330;lv.doorX=x+490;
- x=fillSegs(lv,R,lvl,x+650,3,lvl===0?['plat','pit','plat']:null,true);
+ x=fillSegs(lv,R,lvl,x+650,n2,lvl===0?['plat','pit','plat']:null,phSet,n1);
  lv.exitX=x+140;lv.L=x+300;return lv}
 function buildHidden(idx){
- const lv=newLevel(STAGES[idx].world===1),lvl=Math.min(8,stageLvl(idx)+3),R=rng(5000+idx*31);lv.hidden=true;
- const x=fillSegs(lv,R,lvl,360,4,null,false);
+ const d=STAGES[idx],lv=newLevel(d.hidden?d.sky:d.world===1),lvl=Math.min(stageLvl(idx)+3,d.hidden?12:9),R=rng(5000+idx*31);lv.hidden=true;
+ const x=fillSegs(lv,R,lvl,360,3,null,null,0,{wide:1,laser:1,fly:1});
  lv.station={x:x+140,done:false};lv.L=x+320;return lv}
 const newPlayer=x=>({x,y:0,vx:0,vy:0,on:true,face:1,inv:0,kb:0,coy:0,ride:null,pit:null});
 const laserOn=(l,t)=>((t+l.ph)%(l.on+l.off))<l.on;
-const doorOpen=()=>run.main.station.done&&!(rec(run.def.id).hb>0);
+const doorOpen=()=>run.main.station.done&&!run.hWon;
 
 function startStage(idx){const lv=buildMain(idx);
- run={def:STAGES[idx],idx,lv,main:lv,p:newPlayer(120),pMain:null,cp:120,cam:0,got:0,hits:0,falls:0,mission:0,time:0,t:0,banner:3,near:'',gateMsg:0,parts:[],quit:0,energy:3,counted:false,attemptNo:0,hLeft:0,hudT:''};
+ run={def:STAGES[idx],idx,lv,main:lv,p:newPlayer(120),pMain:null,cp:120,cam:0,got:0,hits:0,falls:0,mission:0,time:0,t:0,banner:3,near:'',gateMsg:0,parts:[],quit:0,energy:3,
+  counted:false,attemptNo:0,mainSim:null,bonus:0,hTries:0,hWon:false,hPen:0,hLeft:0,hudT:''};
  logs=[];$('#bAct').hidden=true;show('play');paintHud()}
 function paintHud(){const r=run;if(!r)return;const h=r.lv.hidden;
  $('#hudStage').textContent=h?'숨겨진 공간 · '+HID[r.def.id].title:stageNo(r.idx)+' '+r.def.name;
  $('#hudPhoton').textContent=r.got;$('#hudPhBox').hidden=h;$('#hudMission').textContent=r.main.station.done?r.mission+'점':'대기';
  $('#hudEn').textContent='●'.repeat(Math.max(0,r.energy))+'○'.repeat(3-Math.max(0,r.energy));
  $('#hudTimeBox').className='chip'+(h?' warn':'');r.hudT=''}
-function hurt(){const r=run,p=r.p;if(p.inv>0)return;if(!r.lv.hidden)r.hits++;r.energy--;p.inv=1.5;p.kb=.3;p.vx=p.face>0?-300:300;p.vy=300;beep(140,.2,'sawtooth',.06);
- if(!r.lv.hidden)r.parts.push({x:p.x,y:p.y+60,vx:0,vy:40,life:1,txt:'-10'});
- if(r.energy<=0)respawn('에너지가 바닥났다.');else paintHud()}
-function respawn(why){const r=run,p=r.p;r.falls++;p.x=r.lv.hidden?120:r.cp;p.y=0;p.vx=p.vy=0;p.pit=null;p.ride=null;p.on=true;p.inv=2;p.kb=0;r.energy=3;paintHud();toast(why+' 구간 처음으로 돌아간다.');beep(110,.3,'sawtooth',.06)}
+function penalty(){const r=run,p=r.p;if(r.lv.hidden)r.hPen+=10;else return false;return true}
+function hurt(){const r=run,p=r.p;if(p.inv>0)return;if(!penalty())r.hits++;r.energy--;p.inv=1.5;p.kb=.3;p.vx=p.face>0?-300:300;p.vy=300;beep(140,.2,'sawtooth',.06);
+ r.parts.push({x:p.x,y:p.y+60,vx:0,vy:40,life:1,txt:'-10'});
+ if(r.energy<=0){p.x=r.lv.hidden?120:r.cp;p.y=0;p.vx=p.vy=0;p.pit=null;p.ride=null;p.on=true;p.inv=2;p.kb=0;r.energy=3;toast('에너지가 바닥났다. 구간 처음으로 돌아간다.')}
+ paintHud()}
+function pitFall(){const r=run,p=r.p,q=p.pit;if(!penalty())r.falls++;
+ p.x=q?q.a-40:(r.lv.hidden?120:r.cp);p.y=0;p.vx=p.vy=0;p.pit=null;p.ride=null;p.on=true;p.inv=1.5;p.kb=0;
+ r.parts.push({x:p.x,y:70,vx:0,vy:40,life:1.2,txt:'-10'});toast('구덩이에 빠졌다. -10점');beep(110,.3,'sawtooth',.06)}
 
 function update(dt){
  const r=run,lv=r.lv,p=r.p;r.t+=dt;
- if(lv.hidden){r.hLeft-=dt;if(r.hLeft<=0){failHidden('시간 초과.');return}}else r.time+=dt;
+ if(lv.hidden){r.hLeft-=dt;if(r.hLeft<=0){failHidden('이동 시간 초과.');return}}else r.time+=dt;
  if(r.banner>0)r.banner-=dt;if(r.gateMsg>0)r.gateMsg-=dt;if(p.inv>0)p.inv-=dt;
  for(const pl of lv.plats)if(pl.mv){const m=pl.mv,ox=pl.x;pl.x+=m.v*m.d*dt;if(pl.x<m.a){pl.x=m.a;m.d=1}else if(pl.x>m.b){pl.x=m.b;m.d=-1}pl.dx=pl.x-ox}
  if(p.ride&&p.ride.mv)p.x+=p.ride.dx;
@@ -1118,7 +1313,7 @@ function update(dt){
  else{if(p.vy<=0)for(const pl of lv.plats)if(p.x>pl.x-10&&p.x<pl.x+pl.w+10&&y0>=pl.y&&p.y<=pl.y){p.y=pl.y;p.vy=0;p.on=true;p.ride=pl;break}
   if(!p.on&&p.y<0&&pit)p.pit=pit}
  if(p.on)p.coy=.09;else p.coy-=dt;
- if(p.y<-260){respawn('구덩이에 빠졌다.');return}
+ if(p.y<-260){pitFall();return}
  if(lv.gateX&&!lv.station.done&&p.x>lv.gateX-18){p.x=lv.gateX-18;p.vx=0;r.gateMsg=1.6}
  p.x=clamp(p.x,20,lv.L-20);
  if(!lv.hidden&&r.cp<lv.station.x-70&&p.on&&p.x>lv.station.x-70)r.cp=lv.station.x-70;
@@ -1174,7 +1369,7 @@ function render(){
   {const x=X(lv.gateX),d=lv.station.done;c.fillStyle=C.hull2;c.fillRect(x-8,gy-200,16,26);c.fillRect(x-8,gy-14,16,14);
    if(!d)for(let i=-1;i<=1;i++){c.strokeStyle='rgba(255,84,104,'+(.55+.35*Math.sin(t*20+i))+')';c.lineWidth=3;c.beginPath();c.moveTo(x+i*5,gy-174);c.lineTo(x+i*5,gy-14);c.stroke()}
    dot(c,x,gy-188,5,d?C.g:C.r);}
-  if(lv.station.done){const x=X(lv.doorX),won=rec(r.def.id).hb>0;c.save();c.globalAlpha=won?.5:1;
+  if(lv.station.done){const x=X(lv.doorX),won=r.hWon;c.save();c.globalAlpha=won?.5:1;
    [C.r,C.g,C.b].forEach((col,i)=>{c.strokeStyle=col;c.lineWidth=3;rr(c,x-30-i*4,gy-104-i*4+(won?0:Math.sin(t*3+i)*2),60+i*8,104+i*4,10);c.stroke()});
    c.fillStyle='rgba(7,4,26,.85)';rr(c,x-28,gy-102,56,102,8);c.fill();c.restore();
    T(c,won?'완료':'?',x,gy-44,won?16:30,won?C.g:C.photon,'center',1);T(c,'숨겨진 공간',x,gy-124,13,won?C.dim:C.photon,'center',1)}
@@ -1191,44 +1386,49 @@ function render(){
  for(const q of r.parts){c.globalAlpha=clamp(q.life,0,1);if(q.txt)T(c,q.txt,X(q.x),Y(q.y),20,C.r,'center',1);else dot(c,X(q.x),Y(q.y),3,q.col)}c.globalAlpha=1;
  let msg='';
  if(r.gateMsg>0)msg='차단막이 길을 막고 있다. 실험 장치를 먼저 조사하자.';
- else if(r.near==='station')msg=hid?'조사 버튼을 눌러 확장 미션에 도전하자. 기회는 한 번이다.':'조사 버튼을 눌러 실험 장치를 가동하자.';
+ else if(r.near==='station')msg=hid?'조사 버튼을 눌러 확장 미션에 도전하자. 30초, 기회는 한 번이다.':'조사 버튼을 눌러 실험 장치를 가동하자.';
  else if(r.near==='door')msg='비밀 문 버튼을 누르면 숨겨진 공간에 도전할 수 있다.';
  else if(!hid&&lv.station.done&&p.x<lv.exitX-200)msg=doorOpen()?'차단막이 열렸다. 숨겨진 공간에 도전하거나 출구로 가자.':'오른쪽 출구로 가자.';
  else if(r.idx===0&&!hid&&r.t<10&&r.banner<=0)msg='광자를 모으며 오른쪽으로. 구덩이는 뛰어넘고, 드론은 피하거나 밟는다.';
  if(msg){c.font='500 16px '+FB;const tw=c.measureText(msg).width;c.fillStyle='rgba(7,11,36,.8)';rr(c,VW/2-tw/2-16,gy-246,tw+32,34,10);c.fill();T(c,msg,VW/2,gy-224,16,C.ink,'center')}
- if(r.banner>0){c.globalAlpha=clamp(r.banner,0,1);c.fillStyle='rgba(7,11,36,.75)';c.fillRect(0,VH*.26,VW,96);T(c,hid?'숨겨진 공간 · 제한 시간 1분 30초':'STAGE '+stageNo(r.idx)+' · '+r.def.place,VW/2,VH*.26+34,16,C.photon,'center');T(c,hid?HID[r.def.id].title:r.def.name,VW/2,VH*.26+76,40,C.ink,'center',1);c.globalAlpha=1}
+ if(r.banner>0){c.globalAlpha=clamp(r.banner,0,1);c.fillStyle='rgba(7,11,36,.75)';c.fillRect(0,VH*.26,VW,96);T(c,hid?'숨겨진 공간 · 20초 안에 장치까지':(r.def.hidden?'HIDDEN STAGE ':'STAGE ')+stageNo(r.idx)+' · '+r.def.place,VW/2,VH*.26+34,16,C.photon,'center');T(c,hid?HID[r.def.id].title:r.def.name,VW/2,VH*.26+76,40,C.ink,'center',1);c.globalAlpha=1}
 }
 
 /* ---------- 숨겨진 공간 ---------- */
-function openDoor(){state='modal';keys.left=keys.right=false;const n=(rec(run.def.id).ht||0)+1,b=hBonus(n);
- $('#modalBox').innerHTML=`<p class="eyebrow">숨겨진 공간</p><h2>${HID[run.def.id].title}</h2><p>교과서 밖의 확장 개념에 도전한다. 제한 시간은 1분 30초이고, 확장 미션의 답은 한 번만 낼 수 있다.</p><p>이번은 ${n}번째 도전이다. 성공하면 보너스 <b style="color:var(--photon)">+${b}점</b>. 실패해도 감점은 없지만 다음 도전의 보너스가 줄어든다.</p><p class="dim">숨겨진 공간에 있는 동안 스테이지 시간은 멈춘다.</p><div class="row"><button class="btn" type="button" data-act="hgo">도전한다</button><button class="btn ghost" type="button" data-act="hno">돌아간다</button></div>`;
+function openDoor(){state='modal';keys.left=keys.right=false;const n=run.hTries+1,b=hBonus(n);
+ $('#modalBox').innerHTML=`<p class="eyebrow">숨겨진 공간</p><h2>${HID[run.def.id].title}</h2><p>20초 안에 장치까지 가서, 30초 안에 확장 미션을 푼다. 답은 한 번만 낼 수 있다.</p><p>이번 판의 ${n}번째 도전이다. 성공하면 보너스 <b style="color:var(--photon)">최대 +${b}점</b>. 안에서 부딪히거나 구덩이에 빠지면 1회마다 10점씩 줄어든다.</p><p class="dim">보너스는 이 판에서 출구까지 가야 점수에 더해진다. 숨겨진 공간에 있는 동안 스테이지 시간은 멈춘다.</p><div class="row"><button class="btn" type="button" data-act="hgo">도전한다</button><button class="btn ghost" type="button" data-act="hno">돌아간다</button></div>`;
  $('#modal').hidden=false}
-function enterHidden(){const r=run,rc=myRec(r.def.id);rc.ht++;enqueue('hstart',{stage:r.def.id});r.pMain=r.p;r.lv=buildHidden(r.idx);r.p=newPlayer(120);r.hLeft=HID_TIME;r.energy=3;r.banner=2.5;r.cam=0;r.near='';$('#bAct').hidden=true;$('#modal').hidden=true;state='play';paintHud();beep(330,.25,'triangle',.06)}
+function enterHidden(){const r=run;r.hTries++;r.hPen=0;r.pMain=r.p;r.lv=buildHidden(r.idx);r.p=newPlayer(120);r.hLeft=HID_MOVE;r.energy=3;r.banner=1.5;r.cam=0;r.near='';$('#bAct').hidden=true;$('#modal').hidden=true;state='play';paintHud();beep(330,.25,'triangle',.06)}
 function leaveHidden(){const r=run;r.lv=r.main;r.p=r.pMain;r.p.vx=r.p.vy=0;r.p.inv=1;r.energy=3;r.near='';sim=null;flushLogs();$('#bAct').hidden=true;show('play');paintHud();r.cam=clamp(r.p.x-VW*.42,0,Math.max(0,r.lv.L-VW))}
-function failHidden(why){enqueue('hdone',{stage:run.def.id,ok:false});leaveHidden();toast(why+' 숨겨진 공간 도전 실패');beep(140,.3,'sawtooth',.06)}
-function winHidden(){const rc=myRec(run.def.id),b=hBonus(rc.ht);rc.hb=Math.max(rc.hb,b);enqueue('hdone',{stage:run.def.id,ok:true});leaveHidden();toast('숨겨진 공간 성공 +'+b+'점');jingle([523,659,784,1047])}
+function failHidden(why){leaveHidden();toast(why+' 숨겨진 공간 도전 실패');beep(140,.3,'sawtooth',.06)}
+const hiddenGain=()=>Math.max(0,hBonus(run.hTries)-run.hPen);
+function winHidden(){const b=hiddenGain();run.bonus=b;run.hWon=true;leaveHidden();toast('숨겨진 공간 성공 +'+b+'점');jingle([523,659,784,1047])}
 
 /* ---------- 실험 장치 UI ---------- */
 function flushLogs(){if(logs.length){enqueue('log',{items:logs});logs=[]}}
 function addLog(kind,text){logs.push({stage:run.def.id,m:sim.hidden?'확장':String(sim.step+1),kind,text:String(text||'').slice(0,120)})}
+const newSim=(def,hidden)=>({def,s:def.init(),step:0,tries:0,hint:false,scores:[],solved:false,failed:false,hidden,left:HID_SOLVE});
 function openSim(hidden){
- const def=hidden?HID[run.def.id]:SIMS[run.def.sim];
- if(!hidden&&!run.counted){run.counted=true;const rc=myRec(run.def.id);rc.a++;run.attemptNo=rc.a;enqueue('attempt',{stage:run.def.id})}
- sim={def,s:def.init(),step:0,tries:0,hint:false,scores:[],solved:false,failed:false,hidden:!!hidden};
- $('#simTitle').textContent=hidden?def.title:run.def.name;$('#simTimer').hidden=!hidden;
- const intro=$('#simIntro');intro.hidden=!hidden;intro.textContent=hidden?def.intro:'';
- show('sim');resize();enterStep()}
-function enterStep(){const st=sim.def.steps[sim.step];sim.tries=0;sim.hint=false;sim.solved=false;if(st.enter)st.enter(sim.s);
+ let resume=false;
+ if(hidden)sim=newSim(HID[run.def.id],true);
+ else{if(!run.counted){run.counted=true;const rc=myRec(run.def.id);rc.a++;run.attemptNo=rc.a;enqueue('attempt',{stage:run.def.id})}
+  if(run.mainSim){sim=run.mainSim;resume=true}else sim=run.mainSim=newSim(SIMS[run.def.sim],false)}
+ $('#simTitle').textContent=hidden?sim.def.title:run.def.name;$('#simTimer').hidden=!hidden;
+ const intro=$('#simIntro');intro.hidden=!hidden;intro.textContent=hidden?sim.def.intro:'';
+ show('sim');resize();enterStep(resume)}
+function enterStep(resume){const st=sim.def.steps[sim.step];
+ if(!resume){sim.tries=0;sim.hint=false;sim.solved=false;if(st.enter)st.enter(sim.s)}
  $('#simDots').innerHTML=sim.hidden?'':sim.def.steps.map((_,i)=>'<i class="'+(i<sim.step?'done':i===sim.step?'now':'')+'"></i>').join('');
  $('#simText').textContent=(sim.hidden?'확장 미션. ':'미션 '+(sim.step+1)+'. ')+st.text;
  const fb=$('#simFeedback');fb.hidden=true;fb.className='';
- $('#simNext').hidden=true;$('#simCheck').hidden=!!st.options;$('#simHint').hidden=sim.hidden;$('#simHint').disabled=false;$('#simExit').hidden=false;
+ if(resume&&(sim.tries||sim.hint))feedback('hint','이 미션에서 지금까지 오답 '+sim.tries+'회'+(sim.hint?', 힌트 사용':'')+'이 기록되어 있다.'+(sim.hint?' 힌트: '+st.hint:''));
+ $('#simNext').hidden=true;$('#simCheck').hidden=!!st.options;$('#simHint').hidden=sim.hidden;$('#simHint').disabled=sim.hint;$('#simExit').hidden=sim.hidden;
  const ob=$('#simOptions');ob.innerHTML='';
  if(st.options)st.options.forEach((o,i)=>{const b=document.createElement('button');b.type='button';b.textContent=o;b.addEventListener('click',()=>{if(sim.solved)return;if(i===st.answer){b.classList.add('right');solve()}else{b.classList.add('wrong');b.disabled=true;miss('다시 생각해 보자. 실험 장치를 조작해 확인할 수 있다.',o)}});ob.appendChild(b)});
  buildControls();
 }
-function buildControls(){const box=$('#simControls'),s=sim.s;box.innerHTML='';
- (sim.def.controls||[]).forEach(ct=>{const row=document.createElement('div');row.className='ctl';
+function buildControls(){const box=$('#simControls'),s=sim.s,st=sim.def.steps[sim.step];box.innerHTML='';
+ (st.controls||sim.def.controls||[]).forEach(ct=>{const row=document.createElement('div');row.className='ctl';
   if(ct.type==='range'){row.innerHTML=`<label for="c_${ct.key}">${ct.label}</label><output></output><input id="c_${ct.key}" type="range" min="${ct.min}" max="${ct.max}" step="${ct.step}" value="${s[ct.key]}">`;
    const inp=row.querySelector('input'),out=row.querySelector('output'),up=()=>{out.textContent=(ct.fmt?ct.fmt(s[ct.key]):s[ct.key])+(ct.unit||'')};inp.addEventListener('input',()=>{s[ct.key]=+inp.value;up()});up()}
   else if(ct.type==='select'){row.innerHTML=`<span class="lab">${ct.label}</span><span></span><div class="seg"></div>`;const seg=row.querySelector('.seg');
@@ -1237,43 +1437,47 @@ function buildControls(){const box=$('#simControls'),s=sim.s;box.innerHTML='';
    ct.items.forEach(o=>{const b=document.createElement('button');b.type='button';b.className=o.cls||'';b.textContent=o.label;b.setAttribute('aria-pressed',!!s[o.key]);b.addEventListener('click',()=>{s[o.key]=s[o.key]?0:1;b.setAttribute('aria-pressed',!!s[o.key]);beep(440,.04)});seg.appendChild(b)})}
   else if(ct.type==='btn'){row.innerHTML='<div class="seg"></div>';const b=document.createElement('button');b.type='button';b.textContent=ct.label;b.setAttribute('aria-pressed','true');b.addEventListener('click',()=>ct.action(s));row.firstChild.appendChild(b)}
   box.appendChild(row)})}
+const simRead=()=>{const st=sim.def.steps[sim.step],f=(st&&st.read)||sim.def.read;return f?f.call(sim.def,sim.s):''};
 function feedback(cls,msg){const fb=$('#simFeedback');fb.className=cls;fb.textContent=msg;fb.hidden=false}
 function miss(msg,logText){const st=sim.def.steps[sim.step];addLog('오답',logText);beep(160,.18,'sawtooth',.05);
- if(sim.hidden){sim.solved=true;sim.failed=true;feedback('bad','실패. '+(st.options?'':msg+' ')+st.explain);$('#simCheck').hidden=true;$('#simExit').hidden=true;const n=$('#simNext');n.hidden=false;n.textContent='돌아가기';return}
- sim.tries++;feedback('bad',msg)}
-function solve(){const st=sim.def.steps[sim.step];sim.solved=true;$('#simCheck').hidden=true;$('#simHint').hidden=true;const n=$('#simNext');n.hidden=false;
- if(sim.hidden){feedback('good','성공! 보너스 +'+hBonus(rec(run.def.id).ht)+'점. '+st.explain);$('#simExit').hidden=true;n.textContent='보너스 받고 돌아가기';jingle([660,880,1047]);return}
- const pts=Math.max(25,100-25*sim.tries-(sim.hint?15:0));sim.scores.push(pts);
+ if(sim.hidden){sim.solved=true;sim.failed=true;feedback('bad','실패. '+(st.options?'':msg+' ')+st.explain);$('#simCheck').hidden=true;const n=$('#simNext');n.hidden=false;n.textContent='돌아가기';return}
+ sim.tries++;feedback('bad',msg+' (오답 '+sim.tries+'회, -'+Math.min(90,sim.tries*40)+'점)')}
+function solve(){const st=sim.def.steps[sim.step];sim.solved=true;$('#simCheck').hidden=true;$('#simHint').hidden=true;$('#simExit').hidden=true;const n=$('#simNext');n.hidden=false;
+ if(sim.hidden){feedback('good','성공! 보너스 +'+hiddenGain()+'점. '+st.explain);n.textContent='보너스 받고 돌아가기';jingle([660,880,1047]);return}
+ const pts=Math.max(10,100-40*sim.tries-(sim.hint?15:0));sim.scores.push(pts);
  feedback('good','성공 +'+pts+'점. '+st.explain);jingle([660,880]);n.textContent=sim.step===sim.def.steps.length-1?'장치 가동':'다음 미션';
  $('#simDots').children[sim.step].className='done'}
-$('#simCheck').addEventListener('click',()=>{if(!sim)return;const st=sim.def.steps[sim.step];if(sim.solved||!st.ok)return;if(st.ok(sim.s))solve();else miss(st.fail?st.fail(sim.s):'아직 아니다. 다시 조절해 보자.',sim.def.read?sim.def.read(sim.s):'')});
-$('#simHint').addEventListener('click',()=>{if(!sim||sim.hidden)return;const st=sim.def.steps[sim.step];sim.hint=true;$('#simHint').disabled=true;addLog('힌트','힌트 사용');feedback('hint','힌트: '+st.hint)});
-$('#simNext').addEventListener('click',()=>{if(!sim)return;
+$('#simCheck').addEventListener('click',()=>{if(!sim)return;const st=sim.def.steps[sim.step];if(sim.solved||!st.ok)return;if(st.ok(sim.s))solve();else miss(st.fail?st.fail(sim.s):'아직 아니다. 다시 조절해 보자.',simRead())});
+$('#simHint').addEventListener('click',()=>{if(!sim||sim.hidden||sim.hint)return;const st=sim.def.steps[sim.step];sim.hint=true;$('#simHint').disabled=true;addLog('힌트','힌트 사용');feedback('hint','힌트: '+st.hint)});
+$('#simNext').addEventListener('click',()=>{if(!sim||!sim.solved)return;
  if(sim.hidden){sim.failed?failHidden('오답.'):winHidden();return}
  sim.step++;
  if(sim.step>=sim.def.steps.length){run.mission=sim.scores.reduce((a,b)=>a+b,0);run.main.station.done=true;run.near='';$('#bAct').hidden=true;sim=null;flushLogs();show('play');paintHud();toast('차단막이 열렸다');jingle([523,659,784])}
- else enterStep()});
-$('#simExit').addEventListener('click',()=>{sim=null;flushLogs();show('play')});
+ else enterStep(false)});
+$('#simExit').addEventListener('click',()=>{if(!sim||sim.hidden)return;sim=null;flushLogs();show('play')});
 sc.addEventListener('pointerdown',e=>{if(!sim||!sim.def.tap||sim.solved)return;const r=sc.getBoundingClientRect();sim.def.tap(sim.s,e.clientX-r.left,e.clientY-r.top,SW,SH);beep(500,.04)});
 
 /* ---------- 결과 ---------- */
 function finishStage(){
- const r=run,id=r.def.id,time=Math.max(1,Math.round(r.time)),att=r.attemptNo||1,c=calc(r.mission,r.got,r.hits,time,att),rc=myRec(id),rk0=rank(total()),prev=rc.clr?rc.s:null;
- if(!rc.clr||c.score>rc.s||(c.score===rc.s&&time<rc.t))Object.assign(rc,{s:c.score,acc:c.acc,tb:c.tb,t:time,star:starOf(c.score),ph:r.got});
+ const r=run,id=r.def.id,time=Math.max(1,Math.round(r.time*10)/10),att=r.attemptNo||1,c=calc(id,r.mission,r.got,r.hits,r.falls,time,att,r.bonus),rc=myRec(id),rk0=rank(total()),prev=rc.clr?rc.s:null;
+ if(!rc.clr||c.score>rc.s||(c.score===rc.s&&time<rc.t))Object.assign(rc,{s:c.score,acc:c.acc,tb:c.tb,hb:r.bonus,t:time,star:c.star,ph:r.got});
+ const ta=att===1&&c.acc===400&&r.bonus===150;if(att===1){rc.fs=c.star;if(ta)rc.ta=time}
  rc.clr=true;
- const ctx={mission:r.mission,got:r.got,hits:r.hits,falls:r.falls,time},fresh=BADGES.filter(b=>!me.badges.includes(b.id)&&b.ok(ctx));fresh.forEach(b=>me.badges.push(b.id));
- enqueue('finish',{stage:id,mission:r.mission,photons:r.got,hits:r.hits,time,badges:fresh.map(b=>b.id)});
- const rk1=rank(total()),ni=r.idx+1<STAGES.length?r.idx+1:-1,stars=starOf(c.score);
- let h=`<p class="eyebrow">STAGE ${stageNo(r.idx)} 클리어 · ${att}번째 도전</p><h2>${r.def.name}</h2><div class="bigstars">${starStr(stars)}</div>
- <dl class="tally"><dt>미션 3개</dt><dd>${r.mission}</dd><dt>광자 ${r.got}/10</dt><dd>+${r.got*10}</dd><dt>충돌 ${r.hits}회</dt><dd>-${r.hits*10}</dd>
- <dt class="sub">정확도 점수 (최대 400)</dt><dd class="sub">${c.acc}</dd><dt>시간 보너스 · 소요 ${fmtT(time)}</dt><dd>+${c.tb}</dd><dt>도전 계수 (${att}번째)</dt><dd>× ${Math.round(c.coef*100)}%</dd>
- <dt class="sub">이번 스테이지 점수</dt><dd class="sub tot">${c.score}</dd><dt>숨겨진 공간 보너스</dt><dd>${rc.hb?'+'+rc.hb:'미도전'}</dd><dt>랭킹 반영 (최고 기록 + 보너스)</dt><dd class="tot">${rc.s+rc.hb}</dd></dl><div class="news">`;
+ const ctx={mission:r.mission,got:r.got,hits:r.hits,falls:r.falls,time,ta},fresh=BADGES.filter(b=>!me.badges.includes(b.id)&&b.ok(ctx));fresh.forEach(b=>me.badges.push(b.id));
+ enqueue('finish',{stage:id,mission:r.mission,photons:r.got,hits:r.hits,falls:r.falls,time,bonus:r.bonus,hTries:r.hTries,badges:fresh.map(b=>b.id)});
+ const rk1=rank(total()),ni=r.idx+1<STAGES.length&&unlocked(r.idx+1)&&(!STAGES[r.idx+1].hidden||r.def.hidden)?r.idx+1:-1,T0=r.def.hidden?3:2;
+ let h=`<p class="eyebrow">${r.def.hidden?'HIDDEN STAGE':'STAGE'} ${stageNo(r.idx)} 클리어 · ${att}번째 도전</p><h2>${r.def.name}</h2><div class="bigstars">${starStr(c.star)}</div>
+ <dl class="tally"><dt>미션 3개</dt><dd>${r.mission}</dd><dt>광자 ${r.got}/10</dt><dd>+${r.got*10}</dd><dt>충돌 ${r.hits}회 · 추락 ${r.falls}회</dt><dd>-${(r.hits+r.falls)*10}</dd>
+ <dt class="sub">정확도 점수 (최대 400)</dt><dd class="sub">${c.acc}</dd><dt>시간 보너스 (최대 200) · 소요 ${time.toFixed(1)}초</dt><dd>+${c.tb}</dd><dt>숨겨진 공간 보너스 (최대 150)</dt><dd>${r.hWon?'+'+r.bonus:r.hTries?'실패':'미도전'}</dd>
+ ${r.def.hidden?'<dt>히든 스테이지 배율</dt><dd>× 1.5</dd>':''}<dt>도전 계수 (${att}번째)</dt><dd>× ${Math.round(c.coef*100)}%</dd>
+ <dt class="sub">이번 판 점수</dt><dd class="sub tot">${c.score}</dd><dt>랭킹에 반영되는 최고 기록</dt><dd class="tot">${rc.s}</dd></dl><div class="news">`;
+ if(ta)h+=`<p>타임어택 기록 등록: ${time.toFixed(1)}초. 랭킹 탭에서 1위인지 확인하자.</p>`;
  if(prev!=null&&c.score<=prev)h+=`<p>이 스테이지의 최고 기록 ${prev}점이 유지된다.</p>`;
- if(c.tb<100)h+=`<p>2분 30초 안에 클리어하면 시간 보너스가 만점(100점)이다.</p>`;
+ if(c.tb===0)h+=`<p>${T0}분 안에 클리어하면 시간 보너스를 받는다. 빠를수록 크다.</p>`;
  if(rk1>rk0)h+=`<p>등급 상승: ${RANKS[rk1][1]}</p>`;
  fresh.forEach(b=>h+=`<p>새 뱃지 「${b.name}」 · ${b.desc}</p>`);
- h+=`</div><p class="dim sync"></p><div class="card"><h4>오늘 확인한 개념</h4><ul>${r.def.concept.map(x=>'<li>'+x+'</li>').join('')}${rc.hb?'<li style="color:var(--photon)">확장: '+HID_CONCEPT[id]+'</li>':''}</ul></div><div class="row">`;
- if(ni>=0&&unlocked(ni))h+=`<button class="btn" type="button" data-act="next" data-i="${ni}">다음 스테이지</button>`;
+ h+=`</div><p class="dim sync"></p><div class="card"><h4>오늘 확인한 개념</h4><ul>${r.def.concept.map(x=>'<li>'+x+'</li>').join('')}${r.hWon?'<li style="color:var(--photon)">확장: '+HID_CONCEPT[id]+'</li>':''}</ul></div><div class="row">`;
+ if(ni>=0)h+=`<button class="btn" type="button" data-act="next" data-i="${ni}">다음 스테이지</button>`;
  h+=`<button class="btn ghost" type="button" data-act="retry" data-i="${r.idx}">다시 도전 (계수 ${Math.round(coefOf(att+1)*100)}%)</button><button class="btn ghost" type="button" data-act="map">지도</button></div>`;
  $('#resBox').innerHTML=h;show('result');paintSync();jingle([523,659,784,1047]);
 }
@@ -1290,6 +1494,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(
  if(a==='rank'){b.disabled=true;loadRank().then(()=>toast('랭킹을 새로 불러왔다'))}
  else if(a==='hgo')enterHidden();
  else if(a==='hno'){$('#modal').hidden=true;state='play'}
+ else if(a==='close')$('#modal').hidden=true;
  else if(a==='next'||a==='retry')startStage(+b.dataset.i);
  else if(a==='map')goMap()});
 $('#btnFull').addEventListener('click',()=>{try{const p=document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();if(p&&p.catch)p.catch(()=>toast('이 화면에서는 전체 화면을 쓸 수 없다'))}catch(e){}});
@@ -1306,10 +1511,9 @@ let last=0;
 function frame(ts){const dt=Math.min(.033,(ts-last)/1000||0);last=ts;clock+=dt;
  if(state==='play'&&run){update(dt);if(state==='play'&&run)render()}
  else if(state==='sim'&&sim){const d=sim.def;
-  if(sim.hidden&&!sim.solved){run.hLeft-=dt;if(run.hLeft<=0){failHidden('시간 초과.');requestAnimationFrame(frame);return}}
-  else if(!sim.hidden)run.time+=dt;
-  if(sim.hidden)$('#simTimer').textContent=fmtT(Math.ceil(run.hLeft));
-  if(d.update)d.update(sim.s,dt);s2.setTransform(DPR,0,0,DPR,0,0);simBg(s2,SW,SH);d.draw(s2,SW,SH,sim.s,clock);$('#simRead').textContent=d.read?d.read(sim.s):''}
+  if(sim.hidden){if(!sim.solved){sim.left-=dt;if(sim.left<=0){failHidden('미션 시간 초과.');requestAnimationFrame(frame);return}}$('#simTimer').textContent=fmtT(Math.ceil(sim.left))}
+  else run.time+=dt;
+  if(d.update)d.update(sim.s,dt);s2.setTransform(DPR,0,0,DPR,0,0);simBg(s2,SW,SH);d.draw(s2,SW,SH,sim.s,clock);$('#simRead').textContent=simRead()}
  requestAnimationFrame(frame)}
 async function boot(){
  $('#demoNote').hidden=!DEMO;paintRank();resize();requestAnimationFrame(frame);
